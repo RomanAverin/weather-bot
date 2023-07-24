@@ -12,7 +12,7 @@ static APP_USER_AGENT: &str = concat!(
     "/",
     env!("CARGO_PKG_VERSION"),
     " ",
-    "github.com/RomanAverin/weather-bot"
+    env!("CARGO_PKG_REPOSITORY")
 );
 
 #[derive(Debug)]
@@ -87,7 +87,9 @@ impl Weather {
             .build()
             .unwrap();
 
+        info!("Agent: {}", APP_USER_AGENT);
         info!("Request API: {}...", api_url);
+
         let res = client.get(api_url).send();
         let returned_status = res.as_ref().unwrap().status();
         match returned_status {
