@@ -1,4 +1,4 @@
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use std::collections::HashMap;
 use std::error;
 
@@ -94,12 +94,12 @@ impl Weather {
         let returned_status = res.as_ref().unwrap().status();
         match returned_status {
             StatusCode::OK => {
-                let forecasts = Weather::parse_response(res.unwrap());
-                let weather = Weather {
+                let forecasts = parse_response(res.unwrap());
+
+                Ok(Self {
                     forecasts,
                     coordinates,
-                };
-                Ok(weather)
+                })
             }
             StatusCode::FORBIDDEN => {
                 warn!("Forbidden 403 API request");
@@ -115,39 +115,39 @@ impl Weather {
     }
 
     // pub fn update() -> Result<(), Error> {}
+}
 
-    fn parse_response(res: Response) -> Forecasts {
-        let mut forecasts: Forecasts = Default::default();
-        let text = res.text().unwrap();
-        let v: Value = serde_json::from_str(text.as_str()).unwrap();
-        let timeseries = &v["properties"]["timeseries"];
+fn parse_response(res: Response) -> Forecasts {
+    let mut forecasts: Forecasts = Default::default();
+    let text = res.text().unwrap();
+    let v: Value = serde_json::from_str(text.as_str()).unwrap();
+    let timeseries = &v["properties"]["timeseries"];
 
-        for hour in 0..2 {
-            let values = &timeseries[hour]["data"]["instant"]["details"];
-            let air_pressure_at_sea_level = values["air_pressure_at_sea_level"].as_f64().unwrap();
+    for hour in 0..2 {
+        let values = &timeseries[hour]["data"]["instant"]["details"];
+        let air_pressure_at_sea_level = values["air_pressure_at_sea_level"].as_f64().unwrap();
 
-            info!("{:#?}", values);
-            let air_temperature = values["air_temperature"].as_f64().unwrap();
+        debug!("{:#?}", values);
+        let air_temperature = values["air_temperature"].as_f64().unwrap();
 
-            let cloud_area_fraction = values["cloud_area_fraction"].as_f64().unwrap();
-            let relative_humidity = values["relative_humidity"].as_f64().unwrap();
-            let wind_from_direction = values["wind_from_direction"].as_f64().unwrap();
-            let wind_speed = values["wind_speed"].as_f64().unwrap();
-            let forecast = Forecast {
-                air_pressure_at_sea_level,
-                air_temperature,
-                cloud_area_fraction,
-                relative_humidity,
-                wind_from_direction,
-                wind_speed,
-            };
-            // "2023-07-15T08:00:00Z"
-            let datetime_str = &timeseries[hour]["time"].as_str().unwrap();
-            info!("Time {:?}", datetime_str);
-            let datetime = DateTime::parse_from_rfc3339(datetime_str).unwrap();
-            forecasts.insert(datetime, forecast);
-        }
-
-        forecasts
+        let cloud_area_fraction = values["cloud_area_fraction"].as_f64().unwrap();
+        let relative_humidity = values["relative_humidity"].as_f64().unwrap();
+        let wind_from_direction = values["wind_from_direction"].as_f64().unwrap();
+        let wind_speed = values["wind_speed"].as_f64().unwrap();
+        let forecast = Forecast {
+            air_pressure_at_sea_level,
+            air_temperature,
+            cloud_area_fraction,
+            relative_humidity,
+            wind_from_direction,
+            wind_speed,
+        };
+        // "2023-07-15T08:00:00Z"
+        let datetime_str = &timeseries[hour]["time"].as_str().unwrap();
+        debug!("Time {:?}", datetime_str);
+        let datetime = DateTime::parse_from_rfc3339(datetime_str).unwrap();
+        forecasts.insert(datetime, forecast);
     }
+
+    forecasts
 }
