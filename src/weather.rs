@@ -117,6 +117,27 @@ impl Weather {
     // pub fn update() -> Result<(), Error> {}
 }
 
+impl std::fmt::Display for Weather {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.forecasts)
+    }
+}
+
+impl std::fmt::Display for Forecast {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Forecast({} {} {} {} {} {})",
+            self.air_pressure_at_sea_level,
+            self.air_temperature,
+            self.cloud_area_fraction,
+            self.relative_humidity,
+            self.wind_from_direction,
+            self.wind_speed
+        )
+    }
+}
+
 fn parse_response(res: Response) -> Forecasts {
     let mut forecasts: Forecasts = Default::default();
     let text = res.text().unwrap();
