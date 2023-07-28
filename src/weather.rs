@@ -7,6 +7,9 @@ use reqwest::blocking::Response;
 use reqwest::StatusCode;
 use serde_json::Value;
 
+use crate::weather_codes::get_weather_code;
+use crate::weather_codes::WeatherCode;
+
 static APP_USER_AGENT: &str = concat!(
     env!("CARGO_PKG_NAME"),
     "/",
@@ -34,19 +37,17 @@ struct Forecast {
     relative_humidity: f64,
     wind_from_direction: f64,
     wind_speed: f64,
+    forecast_by_time: NextHoursForecast,
 }
 
-struct ForecastByTime {
-    precipitation_amount: f64,
-    next_12_hours: WeatherCode,
-    next_1_hours: WeatherCode,
-    next_6_hours: WeatherCode,
+#[derive(Debug, PartialEq, Eq, Hash)]
+enum Hours {
+    Hour1,
+    Hour6,
+    Hour12,
 }
 
-enum WeatherCode {
-    Clearsky,
-    Cloudy,
-}
+type NextHoursForecast = HashMap<Hours, WeatherCode>;
 
 #[derive(Debug)]
 pub enum RequestError {
@@ -127,13 +128,14 @@ impl std::fmt::Display for Forecast {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Forecast({} {} {} {} {} {})",
+            "Forecast({} {} {} {} {} {} {:?})",
             self.air_pressure_at_sea_level,
             self.air_temperature,
             self.cloud_area_fraction,
             self.relative_humidity,
             self.wind_from_direction,
-            self.wind_speed
+            self.wind_speed,
+            self.forecast_by_time
         )
     }
 }
@@ -146,6 +148,8 @@ fn parse_response(res: Response) -> Forecasts {
 
     for hour in 0..2 {
         let values = &timeseries[hour]["data"]["instant"]["details"];
+        let values_by_time = &timeseries[hour]["data"];
+        // info!("{:#?}", values_by_time);
         let air_pressure_at_sea_level = values["air_pressure_at_sea_level"].as_f64().unwrap();
 
         debug!("{:#?}", values);
@@ -155,6 +159,22 @@ fn parse_response(res: Response) -> Forecasts {
         let relative_humidity = values["relative_humidity"].as_f64().unwrap();
         let wind_from_direction = values["wind_from_direction"].as_f64().unwrap();
         let wind_speed = values["wind_speed"].as_f64().unwrap();
+        let testing_value = &timeseries[hour]["data"]["next_12_hours"]["summary"]["symbol_code"];
+        info!("{:#?}", testing_value);
+        let forecast_by_time_12 = values_by_time["next_12_hours"]["summary"]["symbol_code"]
+            .as_str()
+            .unwrap();
+        let forecast_by_time_6 = values_by_time["next_6_hours"]["summary"]["symbol_code"]
+            .as_str()
+            .unwrap();
+        let forecast_by_time_1 = values_by_time["next_1_hours"]["summary"]["symbol_code"]
+            .as_str()
+            .unwrap();
+        let forecast_by_time = HashMap::from([
+            (Hours::Hour1, get_weather_code(forecast_by_time_1)),
+            (Hours::Hour6, get_weather_code(forecast_by_time_6)),
+            (Hours::Hour12, get_weather_code(forecast_by_time_12)),
+        ]);
         let forecast = Forecast {
             air_pressure_at_sea_level,
             air_temperature,
@@ -162,6 +182,7 @@ fn parse_response(res: Response) -> Forecasts {
             relative_humidity,
             wind_from_direction,
             wind_speed,
+            forecast_by_time,
         };
         // "2023-07-15T08:00:00Z"
         let datetime_str = &timeseries[hour]["time"].as_str().unwrap();

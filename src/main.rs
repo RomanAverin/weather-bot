@@ -2,6 +2,7 @@ use dotenv::dotenv;
 use std::env;
 
 mod weather;
+pub mod weather_codes;
 use weather::Weather;
 // use teloxide::prelude::*;
 
