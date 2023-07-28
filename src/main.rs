@@ -1,8 +1,8 @@
-mod weather;
-
+use dotenv::dotenv;
 use std::env;
 
-use dotenv::dotenv;
+mod weather;
+use weather::Weather;
 // use teloxide::prelude::*;
 
 // #[tokio::main]
@@ -19,10 +19,12 @@ fn main() {
     pretty_env_logger::init();
     // let bot_token = env::var("TELEGRAM_BOT_TOKEN").expect("TELEGRAM_BOT_TOKEN must be set up");
 
-    let moscow_weather = weather::Weather::new(55.755825, 37.617298);
-    if let Err(e) = moscow_weather {
-        println!("Error get weather: {}", e);
-    }
+    let moscow_weather = Weather::new(55.755825, 37.617298).unwrap();
+    log::info!("{}", moscow_weather);
+
+    // if let Err(e) = moscow_weather {
+    //     println!("Error get weather: {}", e);
+    // }
 
     // let last5 = &bot_token[bot_token.len() - 5..];
     // log::info!("Starting reminder bot with token {}...", last5);
