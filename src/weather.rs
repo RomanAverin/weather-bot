@@ -27,9 +27,12 @@ pub struct Weather {
 type Forecasts = HashMap<DateTime<FixedOffset>, Forecast>;
 
 #[derive(Debug)]
-struct Coordinates(f64, f64); // (lat, lan)
+struct Coordinates {
+    lat: f64,
+    lon: f64,
+}
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Forecast {
     air_pressure_at_sea_level: f64,
     air_temperature: f64,
@@ -40,7 +43,7 @@ struct Forecast {
     forecast_by_time: NextHoursForecast,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 enum Hours {
     Hour1,
     Hour6,
@@ -74,10 +77,45 @@ impl error::Error for RequestError {
 }
 
 impl Weather {
-    pub fn new(lat: f64, lon: f64) -> Result<Weather, RequestError> {
-        let coordinates = Coordinates(lat, lon);
-        // let weather: Weather;
+    pub fn new(lat: f64, lon: f64) -> Result<Self, RequestError> {
+        let coordinates = Coordinates { lat, lon };
 
+        let response = Weather::request_api(lat, lon);
+
+        match response {
+            Ok(res) => {
+                let forecasts = parse_response(res);
+
+                Ok(Self {
+                    forecasts,
+                    coordinates,
+                })
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    pub fn update(&mut self) -> Result<(), RequestError> {
+        let response = Weather::request_api(self.coordinates.lat, self.coordinates.lon);
+
+        match response {
+            Ok(res) => {
+                let next_forecast = parse_response(res);
+                for time in next_forecast.keys() {
+                    if self.forecasts.remove(time).is_some() {
+                        info!("Update forecast for {:?}", time);
+                        let new_forecast = next_forecast.get(time).unwrap();
+                        self.forecasts.insert(*time, new_forecast.clone());
+                    }
+                }
+                Ok(())
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    fn request_api(lat: f64, lon: f64) -> Result<Response, RequestError> {
+        // let coordinates = Coordinates(lat, lon);
         let api_url = format!(
             "https://api.met.no/weatherapi/locationforecast/2.0/compact?lat={}&lon={}",
             lat, lon
@@ -95,12 +133,8 @@ impl Weather {
         let returned_status = res.as_ref().unwrap().status();
         match returned_status {
             StatusCode::OK => {
-                let forecasts = parse_response(res.unwrap());
-
-                Ok(Self {
-                    forecasts,
-                    coordinates,
-                })
+                info!("Received response");
+                Ok(res.unwrap())
             }
             StatusCode::FORBIDDEN => {
                 warn!("Forbidden 403 API request");
@@ -114,8 +148,6 @@ impl Weather {
             }
         }
     }
-
-    // pub fn update() -> Result<(), Error> {}
 }
 
 impl std::fmt::Display for Weather {
@@ -146,7 +178,7 @@ fn parse_response(res: Response) -> Forecasts {
     let v: Value = serde_json::from_str(text.as_str()).unwrap();
     let timeseries = &v["properties"]["timeseries"];
 
-    for hour in 0..2 {
+    for hour in 0..24 {
         let values = &timeseries[hour]["data"]["instant"]["details"];
         let values_by_time = &timeseries[hour]["data"];
         // info!("{:#?}", values_by_time);
@@ -159,8 +191,7 @@ fn parse_response(res: Response) -> Forecasts {
         let relative_humidity = values["relative_humidity"].as_f64().unwrap();
         let wind_from_direction = values["wind_from_direction"].as_f64().unwrap();
         let wind_speed = values["wind_speed"].as_f64().unwrap();
-        let testing_value = &timeseries[hour]["data"]["next_12_hours"]["summary"]["symbol_code"];
-        info!("{:#?}", testing_value);
+
         let forecast_by_time_12 = values_by_time["next_12_hours"]["summary"]["symbol_code"]
             .as_str()
             .unwrap();
