@@ -30,7 +30,11 @@ fn main() {
     // let last5 = &bot_token[bot_token.len() - 5..];
     // log::info!("Starting reminder bot with token {}...", last5);
 
-    // let bot = Bot::new(bot_token);
+    let commands = Command::bot_commands();
+    match bot.set_my_commands(commands).await {
+        Ok(_) => println!("INFO: set my commands"),
+        Err(err) => eprintln!("ERROR: error set my commands: {}", err),
+    }
 
     // teloxide::repl(bot, |bot: Bot, msg: Message| async move {
     //     bot.send_dice(msg.chat.id).await?;
