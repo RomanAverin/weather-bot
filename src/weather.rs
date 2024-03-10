@@ -1,12 +1,10 @@
 use log::{debug, error, info, warn};
 use std::collections::HashMap;
-use std::error;
 
 use chrono::prelude::*;
-use reqwest::blocking::Response;
-use reqwest::StatusCode;
 use serde_json::Value;
 
+use crate::geo::GeoCoordinate;
 use crate::weather_codes::get_weather_code;
 use crate::weather_codes::WeatherCode;
 
@@ -20,26 +18,20 @@ static APP_USER_AGENT: &str = concat!(
 
 #[derive(Debug)]
 pub struct Weather {
-    forecasts: Forecasts,
-    coordinates: Coordinates,
+    pub forecasts: Forecasts,
+    pub coordinates: GeoCoordinate,
 }
 
-type Forecasts = HashMap<DateTime<FixedOffset>, Forecast>;
-
-#[derive(Debug)]
-struct Coordinates {
-    lat: f64,
-    lon: f64,
-}
+pub type Forecasts = HashMap<DateTime<FixedOffset>, Forecast>;
 
 #[derive(Debug, Clone)]
-struct Forecast {
-    air_pressure_at_sea_level: f64,
-    air_temperature: f64,
-    cloud_area_fraction: f64,
-    relative_humidity: f64,
-    wind_from_direction: f64,
-    wind_speed: f64,
+pub struct Forecast {
+    pub air_pressure_at_sea_level: f64,
+    pub air_temperature: f64,
+    pub cloud_area_fraction: f64,
+    pub relative_humidity: f64,
+    pub wind_from_direction: f64,
+    pub wind_speed: f64,
     forecast_by_time: NextHoursForecast,
 }
 
@@ -52,76 +44,72 @@ enum Hours {
 
 type NextHoursForecast = HashMap<Hours, WeatherCode>;
 
-#[derive(Debug)]
-pub enum RequestError {
-    General(String),
-    Reqwest(reqwest::Error),
-}
+// #[derive(Debug)]
+// pub enum RequestError {
+//     General(String),
+//     Reqwest(reqwest::Error),
+// }
 
-impl std::fmt::Display for RequestError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RequestError::General(s) => write!(f, "{}", s),
-            RequestError::Reqwest(_e) => write!(f, ""),
-        }
-    }
-}
+// impl std::fmt::Display for RequestError {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         match self {
+//             RequestError::General(s) => write!(f, "{}", s),
+//             RequestError::Reqwest(_e) => write!(f, ""),
+//         }
+//     }
+// }
 
-impl error::Error for RequestError {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        match self {
-            RequestError::General(_) => None,
-            RequestError::Reqwest(e) => Some(e),
-        }
-    }
-}
+// impl error::Error for RequestError {
+//     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+//         match self {
+//             RequestError::General(_) => None,
+//             RequestError::Reqwest(e) => Some(e),
+//         }
+//     }
+// }
 
 impl Weather {
-    pub fn new(lat: f64, lon: f64) -> Result<Self, RequestError> {
-        let coordinates = Coordinates { lat, lon };
+    pub async fn new(geo_point: GeoCoordinate) -> anyhow::Result<Self> {
+        let response = Weather::request_api(geo_point.latitude, geo_point.longitude).await?;
+        let forecasts = parse_api_response(response);
 
-        let response = Weather::request_api(lat, lon);
-
-        match response {
-            Ok(res) => {
-                let forecasts = parse_response(res);
-
-                Ok(Self {
-                    forecasts,
-                    coordinates,
-                })
-            }
-            Err(err) => Err(err),
-        }
+        Ok(Self {
+            forecasts,
+            coordinates: geo_point,
+        })
     }
 
-    pub fn update(&mut self) -> Result<(), RequestError> {
-        let response = Weather::request_api(self.coordinates.lat, self.coordinates.lon);
+    // pub async fn get(&mut self) -> anyhow::Result<Forecasts> {
+    //     info!(
+    //         "Get the forecast for coordinates {} {} by Weather API",
+    //         self.coordinates.latitude, self.coordinates.longitude
+    //     );
+    //     let response =
+    //         Weather::request_api(self.coordinates.latitude, self.coordinates.longitude).await?;
 
-        match response {
-            Ok(res) => {
-                let next_forecast = parse_response(res);
-                for time in next_forecast.keys() {
-                    if self.forecasts.remove(time).is_some() {
-                        info!("Update forecast for {:?}", time);
-                        let new_forecast = next_forecast.get(time).unwrap();
-                        self.forecasts.insert(*time, new_forecast.clone());
-                    }
-                }
-                Ok(())
-            }
-            Err(err) => Err(err),
-        }
-    }
+    // match response {
+    //     Ok(res) => {
+    //         let next_forecast = parse_response(res);
+    //         for time in next_forecast.keys() {
+    //             if self.forecasts.remove(time).is_some() {
+    //                 info!("Update forecast time {:?}", time);
+    //                 let new_forecast = next_forecast.get(time).unwrap();
+    //                 self.forecasts.insert(*time, new_forecast.clone());
+    //             }
+    //         }
+    //         Ok(())
+    //     }
+    //     Err(err) => Err(err),
+    // }
+    // }
 
-    fn request_api(lat: f64, lon: f64) -> Result<Response, RequestError> {
-        // let coordinates = Coordinates(lat, lon);
+    async fn request_api(lat: f64, lon: f64) -> anyhow::Result<String> {
         let api_url = format!(
             "https://api.met.no/weatherapi/locationforecast/2.0/compact?lat={}&lon={}",
             lat, lon
         );
 
-        let client = reqwest::blocking::Client::builder()
+        let client = reqwest::Client::builder()
             .user_agent(APP_USER_AGENT)
             .build()
             .unwrap();
@@ -129,24 +117,14 @@ impl Weather {
         info!("Agent: {}", APP_USER_AGENT);
         info!("Request API: {}...", api_url);
 
-        let res = client.get(api_url).send();
-        let returned_status = res.as_ref().unwrap().status();
-        match returned_status {
-            StatusCode::OK => {
-                info!("Received response");
-                Ok(res.unwrap())
-            }
-            StatusCode::FORBIDDEN => {
-                warn!("Forbidden 403 API request");
-                let error = "Forbidden 403 API request".to_string();
-                Err(RequestError::General(error))
-            }
-            _ => {
-                let error = res.err().unwrap();
-                error!("Error API request: {}", error);
-                Err(RequestError::Reqwest(error))
-            }
-        }
+        let text_response = client.get(api_url).send().await?.text().await?;
+
+        Ok(text_response)
+    }
+
+    pub fn get_forecast_for_hour(&self, time: &DateTime<FixedOffset>) -> Option<&Forecast> {
+        info!("Get forecast for {:?}", time);
+        self.forecasts.get(time)
     }
 }
 
@@ -160,22 +138,22 @@ impl std::fmt::Display for Forecast {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Forecast({} {} {} {} {} {} {:?})",
+            "Forecast(Air Pressure: {}\n Temperature: {}\n Humidity: {}\n 
+                Cloud: {}\n Relative Humidity: {}\n Wind Direction: {}\n Wind Speed: {})",
             self.air_pressure_at_sea_level,
             self.air_temperature,
+            self.relative_humidity,
             self.cloud_area_fraction,
             self.relative_humidity,
             self.wind_from_direction,
             self.wind_speed,
-            self.forecast_by_time
         )
     }
 }
 
-fn parse_response(res: Response) -> Forecasts {
+fn parse_api_response(text_response: String) -> Forecasts {
     let mut forecasts: Forecasts = Default::default();
-    let text = res.text().unwrap();
-    let v: Value = serde_json::from_str(text.as_str()).unwrap();
+    let v: Value = serde_json::from_str(&text_response).unwrap();
     let timeseries = &v["properties"]["timeseries"];
 
     for hour in 0..24 {
