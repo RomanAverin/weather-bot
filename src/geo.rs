@@ -12,7 +12,7 @@ static APP_USER_AGENT: &str = concat!(
     env!("CARGO_PKG_REPOSITORY")
 );
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GeoCoordinate {
     pub latitude: f64,
     pub longitude: f64,
