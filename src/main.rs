@@ -8,6 +8,8 @@ use teloxide::{
     utils::command::BotCommands,
 };
 
+pub mod db;
+
 mod geo;
 mod weather;
 pub mod weather_codes;
